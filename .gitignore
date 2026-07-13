@@ -1,0 +1,32 @@
+﻿# 依赖
+node_modules/
+
+# Next.js 构建产物
+.next/
+out/
+
+# 环境变量
+.env
+.env.local
+.env*.local
+
+# 数据库
+prisma/dev.db
+prisma/dev.db-journal
+prisma/*.db
+
+# 日志
+*.log
+npm-debug.log*
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 打包临时文件
+_pack_tmp/
+*.zip
+
+# IDE
+.vscode/
+.idea/

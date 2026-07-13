@@ -1,0 +1,68 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  passwordHash  String
+  baseCurrency  String   @default("CNY")
+  targetAlloc   String?
+  createdAt     DateTime @default(now())
+  assets        Asset[]
+  transactions  Transaction[]
+  snapshots     Snapshot[]
+}
+
+model Asset {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  symbol       String
+  name         String
+  category     String
+  currency     String
+  quantity     Float
+  costPrice    Float
+  manualPrice  Float?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  transactions Transaction[]
+
+  @@index([userId])
+}
+
+model Transaction {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assetId   String
+  asset     Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  type      String
+  quantity  Float
+  price     Float
+  fee       Float    @default(0)
+  date      DateTime
+  note      String?
+
+  @@index([userId, date])
+}
+
+model Snapshot {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date        DateTime
+  totalValue  Float
+  totalCost   Float
+  breakdown   String
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
