@@ -1,19 +1,32 @@
 import { auth } from "@/auth";
 import { computeHoldings } from "@/lib/portfolio";
 import { prisma } from "@/lib/prisma";
+import { computeMetrics, estimateMonthsToGoal } from "@/lib/metrics";
 import NetWorthChart from "@/components/NetWorthChart";
 import AllocationPie from "@/components/AllocationPie";
+import GoalProgress from "@/components/GoalProgress";
+import MetricsPanel from "@/components/MetricsPanel";
 import { redirect } from "next/navigation";
 
 export default async function Dashboard() {
   const session = await auth();
   if (!session?.user) redirect("/login");
   const uid = (session.user as any).id;
-  const { base, totalValue, totalCost, byCategory } = await computeHoldings(uid);
+
+  const {
+    user, base, totalValue, totalCost, totalDividend,
+    totalReturnPctWithDividend, byCategory,
+  } = await computeHoldings(uid);
+
   const snapshots = await prisma.snapshot.findMany({
     where: { userId: uid },
     orderBy: { date: "asc" },
   });
+
+  const metrics = computeMetrics(snapshots, user.riskFreeRate);
+  const monthsToGoal = user.targetAmount
+    ? estimateMonthsToGoal(snapshots, totalValue, user.targetAmount)
+    : null;
 
   const pnl = totalValue - totalCost;
   const pnlPct = totalCost > 0 ? (pnl / totalCost) * 100 : 0;
@@ -21,16 +34,28 @@ export default async function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* 顶部数值卡片 */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card title={`总资产 (${base})`} value={fmt(totalValue)} />
         <Card title={`总成本 (${base})`} value={fmt(totalCost)} />
-        <Card
-          title="累计收益"
-          value={`${fmt(pnl)} (${pnlPct.toFixed(2)}%)`}
-          tone={pnl >= 0 ? "up" : "down"}
-        />
+        <Card title="浮动盈亏" value={`${fmt(pnl)} (${pnlPct.toFixed(2)}%)`} tone={pnl >= 0 ? "up" : "down"} />
+        <Card title="累计分红" value={fmt(totalDividend)} tone="up" />
       </div>
 
+      {/* 目标进度 */}
+      {user.targetAmount && (
+        <GoalProgress
+          current={totalValue}
+          target={user.targetAmount}
+          baseCurrency={base}
+          monthsToGoal={monthsToGoal}
+        />
+      )}
+
+      {/* 专业指标 */}
+      <MetricsPanel metrics={metrics} totalReturnWithDividend={totalReturnPctWithDividend} />
+
+      {/* 曲线 + 饼图 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="md:col-span-2 bg-white rounded-xl p-4 border">
           <h3 className="font-semibold mb-2">净值曲线</h3>
@@ -38,6 +63,7 @@ export default async function Dashboard() {
             data={snapshots.map((s) => ({
               date: s.date.toISOString().slice(0, 10),
               value: s.totalValue,
+              cost: s.totalCost,
             }))}
           />
         </div>

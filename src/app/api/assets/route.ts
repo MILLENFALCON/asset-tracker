@@ -12,7 +12,12 @@ const schema = z.object({
   quantity: z.number(),
   costPrice: z.number(),
   manualPrice: z.number().optional(),
+  interestRate: z.number().optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  compoundType: z.string().optional(),
 });
+
 
 export async function GET() {
   const session = await auth();
@@ -26,7 +31,12 @@ export async function POST(req: Request) {
   if (!session?.user) return NextResponse.json({ error: "unauth" }, { status: 401 });
   const body = schema.parse(await req.json());
   const a = await prisma.asset.create({
-    data: { ...body, userId: (session.user as any).id },
+    data: {
+    ...body,
+    startDate: body.startDate ? new Date(body.startDate) : null,
+    endDate: body.endDate ? new Date(body.endDate) : null,
+    userId: (session.user as any).id,
+    },
   });
   return NextResponse.json(a);
 }
