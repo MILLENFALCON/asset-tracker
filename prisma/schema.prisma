@@ -14,13 +14,15 @@ model User {
   passwordHash  String
   baseCurrency  String   @default("CNY")
   targetAlloc   String?
-  targetAmount  Float?           // ✨ 新增：目标金额
-  riskFreeRate  Float    @default(0.025)  // ✨ 无风险利率，用于夏普
+  targetAmount  Float?
+  riskFreeRate  Float    @default(0.025)
   createdAt     DateTime @default(now())
   assets        Asset[]
   transactions  Transaction[]
   snapshots     Snapshot[]
   dividends     Dividend[]
+  plans         InvestmentPlan[]
+  cashFlows     CashFlow[]
 }
 
 model Asset {
@@ -29,46 +31,26 @@ model Asset {
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   symbol       String
   name         String
-  category     String   // STOCK / ETF / FUND / BOND / CRYPTO / CASH / DEPOSIT / DIVIDEND_STOCK / OTHER
+  category     String
   currency     String
   quantity     Float
   costPrice    Float
   manualPrice  Float?
 
-  // ✨ 定存专用字段
-  interestRate Float?           // 年化利率，如 0.025 表示 2.5%
-  startDate    DateTime?        // 起息日
-  endDate      DateTime?        // 到期日
-  compoundType String?          // SIMPLE 单利 / COMPOUND 复利，默认 SIMPLE
+  interestRate Float?
+  startDate    DateTime?
+  endDate      DateTime?
+  compoundType String?
 
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   transactions Transaction[]
   dividends    Dividend[]
+  plans         InvestmentPlan[] @relation("PlanTargetAsset")
+  fromPlans     InvestmentPlan[] @relation("PlanFromAsset")
+
   @@index([userId])
 }
-
-// ✨ 新增：分红记录
-model Dividend {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  assetId     String
-  asset       Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  exDate      DateTime               // 除息日
-  payDate     DateTime               // 派息日
-  perShare    Float                  // 每股股息（原币种）
-  totalAmount Float                  // 应付总额
-  taxAmount   Float    @default(0)   // 扣税
-  netAmount   Float                  // 到手金额
-  action      String                 // CASH / REINVEST / RECORD
-  reinvestPrice Float?               // 复投价格（action=REINVEST 时用）
-  note        String?
-  createdAt   DateTime @default(now())
-  @@index([userId, payDate])
-}
-
-// Transaction / Snapshot 保持原样
 
 model Transaction {
   id        String   @id @default(cuid())
@@ -93,8 +75,68 @@ model Snapshot {
   date        DateTime
   totalValue  Float
   totalCost   Float
+  netFlow     Float    @default(0)   // 新增：当日外部净流入(折算到 baseCurrency)
   breakdown   String
 
   @@unique([userId, date])
+  @@index([userId, date])
+}
+
+model Dividend {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assetId       String
+  asset         Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  exDate        DateTime
+  payDate       DateTime
+  perShare      Float
+  totalAmount   Float
+  taxAmount     Float    @default(0)
+  netAmount     Float
+  action        String
+  reinvestPrice Float?
+  note          String?
+  createdAt     DateTime @default(now())
+
+  @@index([userId, payDate])
+}
+
+model InvestmentPlan {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assetId       String
+  asset         Asset    @relation("PlanTargetAsset", fields: [assetId], references: [id], onDelete: Cascade)
+  fromAssetId   String?
+  fromAsset     Asset?   @relation("PlanFromAsset", fields: [fromAssetId], references: [id])
+  name          String
+  amount        Float
+  frequency     String
+  dayOfMonth    Int?
+  dayOfWeek     Int?
+  startDate     DateTime
+  endDate       DateTime?
+  active        Boolean   @default(true)
+  lastExecuted  DateTime?
+  executedCount Int       @default(0)
+  totalInvested Float     @default(0)
+  createdAt     DateTime  @default(now())
+
+
+  @@index([userId, active])
+}
+
+model CashFlow {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      DateTime
+  type      String   // DEPOSIT=工资/转入  WITHDRAW=消费/转出
+  amount    Float    // 原币种金额，正数
+  currency  String   @default("CNY")
+  note      String?
+  createdAt DateTime @default(now())
+
   @@index([userId, date])
 }

@@ -36,9 +36,9 @@ export default function AssetForm() {
 
   const isDeposit = f.category === "DEPOSIT";
   const isCash = f.category === "CASH";
+  const hasInterest = isDeposit || isCash;
   const needsSearch = !isDeposit && !isCash;
 
-  // 输入 symbol 时做防抖搜索
   useEffect(() => {
     if (!needsSearch || !f.symbol || f.symbol.length < 1) {
       setSuggestions([]);
@@ -71,54 +71,41 @@ export default function AssetForm() {
   }
 
   async function submit() {
-    // 校验
-    if (!f.name) {
-      alert("请填写名称");
-      return;
-    }
+    if (!f.name) return alert("请填写名称");
+
     if (isDeposit) {
-      if (!f.costPrice || f.costPrice <= 0) {
-        alert("请填写本金金额（成本价 × 数量 = 总本金，一般数量填 1，成本价填本金）");
-        return;
-      }
-      if (!f.interestRate) {
-        alert("请填写年化利率，如 0.025 表示 2.5%");
-        return;
-      }
-      if (!f.startDate) {
-        alert("请选择起息日");
-        return;
-      }
+      if (!f.costPrice || f.costPrice <= 0) return alert("请填写本金金额");
+      if (!f.interestRate) return alert("请填写年化利率，如 0.025 表示 2.5%");
+      if (!f.startDate) return alert("请选择起息日");
+    } else if (isCash) {
+      if (!f.quantity || f.quantity <= 0) return alert("请填写金额");
     } else {
-      if (!f.symbol) {
-        alert("请填写代码");
-        return;
-      }
-      if (!f.quantity || f.quantity <= 0) {
-        alert("请填写数量");
-        return;
-      }
+      if (!f.symbol) return alert("请填写代码");
+      if (!f.quantity || f.quantity <= 0) return alert("请填写数量");
     }
 
-    // 定存自动构造 symbol
     const payload: any = { ...f };
+
     if (isDeposit) {
       if (!payload.symbol) payload.symbol = `DEPOSIT-${Date.now()}`;
       if (!payload.quantity) payload.quantity = 1;
-    }
-    if (isCash) {
+      payload.startDate = f.startDate || undefined;
+      payload.endDate = f.endDate || undefined;
+    } else if (isCash) {
       if (!payload.symbol) payload.symbol = `CASH-${f.currency}`;
-      if (!payload.costPrice) payload.costPrice = 1;
-    }
-    // 非定存字段清空
-    if (!isDeposit) {
+      payload.costPrice = 1;
+      if (f.interestRate && f.startDate) {
+        payload.startDate = f.startDate;
+      } else {
+        payload.interestRate = undefined;
+        payload.startDate = undefined;
+      }
+      payload.endDate = undefined;
+    } else {
       payload.interestRate = undefined;
       payload.startDate = undefined;
       payload.endDate = undefined;
       payload.compoundType = undefined;
-    } else {
-      payload.startDate = f.startDate || undefined;
-      payload.endDate = f.endDate || undefined;
     }
 
     const r = await fetch("/api/assets", {
@@ -149,15 +136,13 @@ export default function AssetForm() {
         </button>
       </div>
 
-      {/* 基础字段 */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
-        {/* 代码 + 联想 */}
         <div className="relative col-span-2 md:col-span-1">
           <input
             className="border rounded p-2 w-full"
-            placeholder={isDeposit ? "可留空" : "代码/名称"}
+            placeholder={isDeposit ? "可留空" : isCash ? "自动填充" : "代码/名称"}
             value={f.symbol}
-            disabled={isDeposit}
+            disabled={isDeposit || isCash}
             onChange={(e) => {
               setF({ ...f, symbol: e.target.value.toUpperCase() });
               setShowList(true);
@@ -175,7 +160,9 @@ export default function AssetForm() {
                   className="p-2 hover:bg-gray-100 cursor-pointer text-sm"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-mono font-semibold">{s.shortCode || s.symbol}</span>
+                    <span className="font-mono font-semibold">
+                      {s.shortCode || s.symbol}
+                    </span>
                     <span className="text-xs text-gray-400">{s.source}</span>
                   </div>
                   <div className="text-xs text-gray-500">
@@ -216,24 +203,26 @@ export default function AssetForm() {
         <input
           className="border rounded p-2"
           type="number"
-          placeholder={isDeposit ? "份数(默认1)" : "数量"}
+          placeholder={isCash ? "金额" : isDeposit ? "份数(默认1)" : "数量"}
           value={f.quantity || ""}
           onChange={(e) => setF({ ...f, quantity: Number(e.target.value) })}
         />
         <input
           className="border rounded p-2"
           type="number"
-          placeholder={isDeposit ? "本金金额" : "成本价"}
+          placeholder={isCash ? "自动为1" : isDeposit ? "本金" : "成本价"}
           value={f.costPrice || ""}
+          disabled={isCash}
           onChange={(e) => setF({ ...f, costPrice: Number(e.target.value) })}
         />
       </div>
 
-      {/* 定存专用字段 */}
-      {isDeposit && (
+      {hasInterest && (
         <div className="pt-3 border-t space-y-2">
           <div className="text-sm text-gray-600">
-            定存参数（"本金"填在<b>成本价</b>字段，数量默认 1；到期日可留空表示活期）
+            {isCash
+              ? "活期利率（可选，如余额宝填 0.015）"
+              : "定存参数（本金填在成本价字段，数量默认 1）"}
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <div>
@@ -256,15 +245,17 @@ export default function AssetForm() {
                 onChange={(e) => setF({ ...f, startDate: e.target.value })}
               />
             </div>
-            <div>
-              <label className="text-xs text-gray-500">到期日（可选）</label>
-              <input
-                className="border rounded p-2 w-full mt-1"
-                type="date"
-                value={f.endDate}
-                onChange={(e) => setF({ ...f, endDate: e.target.value })}
-              />
-            </div>
+            {isDeposit && (
+              <div>
+                <label className="text-xs text-gray-500">到期日（可选）</label>
+                <input
+                  className="border rounded p-2 w-full mt-1"
+                  type="date"
+                  value={f.endDate}
+                  onChange={(e) => setF({ ...f, endDate: e.target.value })}
+                />
+              </div>
+            )}
             <div>
               <label className="text-xs text-gray-500">计息方式</label>
               <select
@@ -277,13 +268,6 @@ export default function AssetForm() {
               </select>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* 现金类提示 */}
-      {isCash && (
-        <div className="text-xs text-gray-500">
-          现金类：数量填金额，成本价留空或填 1（会自动处理）
         </div>
       )}
 

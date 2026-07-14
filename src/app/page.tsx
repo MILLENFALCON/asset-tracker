@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { computeHoldings } from "@/lib/portfolio";
 import { prisma } from "@/lib/prisma";
 import { computeMetrics, estimateMonthsToGoal } from "@/lib/metrics";
+import { getFxRate } from "@/lib/fx";
 import NetWorthChart from "@/components/NetWorthChart";
 import AllocationPie from "@/components/AllocationPie";
 import GoalProgress from "@/components/GoalProgress";
@@ -23,7 +24,20 @@ export default async function Dashboard() {
     orderBy: { date: "asc" },
   });
 
-  const metrics = computeMetrics(snapshots, user.riskFreeRate);
+  const rawFlows = await prisma.cashFlow.findMany({
+    where: { userId: uid },
+    orderBy: { date: "asc" },
+  });
+  const flowsForMetrics = await Promise.all(
+    rawFlows.map(async (f) => ({
+      date: f.date,
+      type: f.type,
+      amountBase: f.amount * (await getFxRate(f.currency, base)),
+    }))
+  );
+
+const metrics = computeMetrics(snapshots, flowsForMetrics, totalValue, user.riskFreeRate);
+
   const monthsToGoal = user.targetAmount
     ? estimateMonthsToGoal(snapshots, totalValue, user.targetAmount)
     : null;
